@@ -1,0 +1,38 @@
+collectors:
+  screenshot:
+    enabled: true
+    interval_seconds: 60
+    ocr_engine: "pytesseract"
+    vision_enabled: false   # Set to true to enable Qwen (needs 6GB free RAM + GPU)
+  window_tracker:
+    enabled: true
+    interval_seconds: 3
+  clipboard:
+    enabled: true
+    interval_seconds: 5
+
+storage:
+  data_dir: "./data"
+  retention_days: 30
+  db_path: "./data/monitor.db"
+
+llm:
+  provider: "ollama"
+  base_url: "http://localhost:11434"
+  text_model: "llama3.2"
+  vision_model: "llava"
+  summary_interval_minutes: 60
+
+dashboard:
+  host: "127.0.0.1"
+  port: 7001
+
+privacy:
+  excluded_apps:
+    - "KeePass"
+    - "1Password"
+  excluded_window_titles:
+    - "*password*"
+    - "*secret*"
+    - "*credential*"
+  blur_sensitive: true

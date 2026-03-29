@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Desktop Monitor{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4"></script>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #242834;
+            --border: #2e3344;
+            --text: #e1e4ed;
+            --text-dim: #8b8fa3;
+            --accent: #6c5ce7;
+            --accent-light: #a29bfe;
+            --success: #00cec9;
+            --warning: #fdcb6e;
+            --danger: #ff7675;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 220px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 20px 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-brand {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 10px;
+        }
+
+        .sidebar-brand h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent-light);
+        }
+
+        .sidebar-brand span {
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.15s;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            color: var(--text);
+            background: var(--surface2);
+        }
+
+        .nav-item.active {
+            border-left: 3px solid var(--accent);
+            padding-left: 17px;
+        }
+
+        .nav-icon { font-size: 18px; width: 24px; text-align: center; }
+
+        /* Status indicator */
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.online { background: var(--success); }
+        .status-dot.offline { background: var(--danger); }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 15px 20px;
+            border-top: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        /* Main content */
+        .main {
+            margin-left: 220px;
+            flex: 1;
+            padding: 30px;
+        }
+
+        .page-header {
+            margin-bottom: 25px;
+        }
+
+        .page-header h2 {
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .page-header p {
+            color: var(--text-dim);
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .card-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        /* Grid */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+
+        /* Stats */
+        .stat { text-align: center; padding: 15px; }
+        .stat-value { font-size: 28px; font-weight: 700; color: var(--accent-light); }
+        .stat-label { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+        /* Timeline */
+        .timeline-item {
+            display: flex;
+            gap: 15px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .timeline-item:last-child { border-bottom: none; }
+
+        .timeline-time {
+            font-size: 12px;
+            color: var(--text-dim);
+            min-width: 60px;
+            padding-top: 2px;
+        }
+
+        .timeline-content { flex: 1; }
+
+        .timeline-app {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-light);
+        }
+
+        .timeline-title {
+            font-size: 13px;
+            color: var(--text);
+            margin-top: 2px;
+        }
+
+        .timeline-duration {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        /* Screenshot thumbnails */
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .screenshot-thumb {
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+
+        .screenshot-thumb:hover { transform: scale(1.02); }
+
+        .screenshot-thumb img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+        }
+
+        .screenshot-thumb .meta {
+            padding: 6px 8px;
+            font-size: 11px;
+            color: var(--text-dim);
+            background: var(--surface2);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--text);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn:hover { background: var(--border); }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .btn-primary:hover { background: var(--accent-light); }
+
+        /* Search */
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px 15px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+        }
+
+        .search-input:focus { border-color: var(--accent); }
+
+        /* Summary box */
+        .summary-box {
+            background: var(--surface2);
+            border-left: 3px solid var(--accent);
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 15px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* Loading */
+        .htmx-indicator {
+            display: none;
+            color: var(--accent-light);
+            font-size: 13px;
+            margin-left: 10px;
+        }
+        .htmx-indicator.htmx-request { display: inline; }
+        .htmx-request.htmx-indicator { display: inline; }
+
+        /* Badge */
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-accent { background: var(--accent); color: white; }
+        .badge-success { background: rgba(0,206,201,0.15); color: var(--success); }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <h1>Desktop Monitor</h1>
+                <span>AI Activity Tracker</span>
+            </div>
+            <a href="/" class="nav-item {% if active_page == 'timeline' %}active{% endif %}">
+                <span class="nav-icon">&#128197;</span> Timeline
+            </a>
+            <a href="/search" class="nav-item {% if active_page == 'search' %}active{% endif %}">
+                <span class="nav-icon">&#128269;</span> Search
+            </a>
+            <a href="/history" class="nav-item {% if active_page == 'history' %}active{% endif %}">
+                <span class="nav-icon">&#128337;</span> History
+            </a>
+            <a href="/insights" class="nav-item {% if active_page == 'insights' %}active{% endif %}">
+                <span class="nav-icon">&#128200;</span> Insights
+            </a>
+            <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+                <span class="nav-icon">&#9881;</span> Settings
+            </a>
+            <div class="sidebar-footer">
+                <div id="ollama-status" hx-get="/api/status" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                    Checking status...
+                </div>
+            </div>
+        </nav>
+        <main class="main">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

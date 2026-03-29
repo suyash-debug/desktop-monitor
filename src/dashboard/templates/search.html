@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% set active_page = "search" %}
+
+{% block title %}Search - Desktop Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Activity Search</h2>
+    <p>Ask questions about your past activity in natural language</p>
+</div>
+
+<div class="card">
+    <form hx-post="/api/search" hx-target="#search-results" hx-indicator="#search-loading">
+        <div class="search-box">
+            <input type="text" name="query" class="search-input"
+                   placeholder="e.g., What was I working on this morning? / Find when I used Photoshop / What did I copy about APIs?"
+                   required>
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+    </form>
+    <span id="search-loading" class="htmx-indicator">Searching with AI...</span>
+</div>
+
+<div id="search-results">
+    {% if results %}
+    <!-- AI Answer -->
+    {% if results.answer %}
+    <div class="card">
+        <div class="card-header">
+            <h3>AI Answer</h3>
+            <span class="badge badge-accent">Powered by Ollama</span>
+        </div>
+        <div class="summary-box">{{ results.answer }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Matching Windows -->
+    {% if results.results.window_events %}
+    <div class="card">
+        <div class="card-header">
+            <h3>Matching Window Events</h3>
+            <span class="badge badge-success">{{ results.results.window_events|length }} results</span>
+        </div>
+        {% for w in results.results.window_events[:15] %}
+        <div class="timeline-item">
+            <div class="timeline-time">{{ w.timestamp[11:19] }}</div>
+            <div class="timeline-content">
+                <div class="timeline-app">{{ w.process_name }}</div>
+                <div class="timeline-title">{{ w.window_title[:100] }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Matching Screenshots -->
+    {% if results.results.screenshots %}
+    <div class="card">
+        <div class="card-header">
+            <h3>Matching Screenshots</h3>
+            <span class="badge badge-success">{{ results.results.screenshots|length }} results</span>
+        </div>
+        <div class="screenshot-grid">
+            {% for s in results.results.screenshots[:8] %}
+            <div class="screenshot-thumb">
+                <img src="/api/screenshot/{{ s.id }}" alt="Screenshot" loading="lazy">
+                <div class="meta">{{ s.timestamp[:19] }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Matching Clipboard -->
+    {% if results.results.clipboard_events %}
+    <div class="card">
+        <div class="card-header">
+            <h3>Matching Clipboard Events</h3>
+            <span class="badge badge-success">{{ results.results.clipboard_events|length }} results</span>
+        </div>
+        {% for c in results.results.clipboard_events[:10] %}
+        <div class="timeline-item">
+            <div class="timeline-time">{{ c.timestamp[11:19] }}</div>
+            <div class="timeline-content">
+                <div class="timeline-title" style="font-family: monospace; font-size: 12px; white-space: pre-wrap;">{{ c.content_text[:300] }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="card" style="text-align: center; padding: 40px;">
+        <p style="color: var(--text-dim); font-size: 16px;">Enter a question above to search your activity history</p>
+        <p style="color: var(--text-dim); font-size: 13px; margin-top: 10px;">
+            Try: "What was I doing an hour ago?" or "Show me when I used Chrome today"
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// Handle HTMX response for search (converts JSON to HTML)
+document.body.addEventListener('htmx:beforeSwap', function(evt) {
+    if (evt.detail.target.id === 'search-results') {
+        try {
+            const data = JSON.parse(evt.detail.xhr.responseText);
+            let html = '';
+
+            // AI Answer
+            if (data.answer) {
+                html += `<div class="card">
+                    <div class="card-header"><h3>AI Answer</h3><span class="badge badge-accent">Powered by Ollama</span></div>
+                    <div class="summary-box">${data.answer}</div>
+                </div>`;
+            }
+
+            // Window events
+            if (data.results?.window_events?.length) {
+                html += `<div class="card"><div class="card-header"><h3>Window Events</h3>
+                    <span class="badge badge-success">${data.results.window_events.length} results</span></div>`;
+                data.results.window_events.slice(0, 15).forEach(w => {
+                    html += `<div class="timeline-item">
+                        <div class="timeline-time">${w.timestamp?.substring(11, 19) || ''}</div>
+                        <div class="timeline-content">
+                            <div class="timeline-app">${w.process_name || ''}</div>
+                            <div class="timeline-title">${(w.window_title || '').substring(0, 100)}</div>
+                        </div></div>`;
+                });
+                html += '</div>';
+            }
+
+            // Screenshots
+            if (data.results?.screenshots?.length) {
+                html += `<div class="card"><div class="card-header"><h3>Screenshots</h3>
+                    <span class="badge badge-success">${data.results.screenshots.length} results</span></div>
+                    <div class="screenshot-grid">`;
+                data.results.screenshots.slice(0, 8).forEach(s => {
+                    html += `<div class="screenshot-thumb">
+                        <img src="/api/screenshot/${s.id}" alt="Screenshot" loading="lazy">
+                        <div class="meta">${(s.timestamp || '').substring(0, 19)}</div></div>`;
+                });
+                html += '</div></div>';
+            }
+
+            // Clipboard
+            if (data.results?.clipboard_events?.length) {
+                html += `<div class="card"><div class="card-header"><h3>Clipboard Events</h3>
+                    <span class="badge badge-success">${data.results.clipboard_events.length} results</span></div>`;
+                data.results.clipboard_events.slice(0, 10).forEach(c => {
+                    html += `<div class="timeline-item">
+                        <div class="timeline-time">${c.timestamp?.substring(11, 19) || ''}</div>
+                        <div class="timeline-content">
+                            <div class="timeline-title" style="font-family:monospace;font-size:12px;white-space:pre-wrap">${(c.content_text || '').substring(0, 300)}</div>
+                        </div></div>`;
+                });
+                html += '</div>';
+            }
+
+            if (!html) html = '<div class="card" style="text-align:center;padding:40px"><p style="color:var(--text-dim)">No results found</p></div>';
+
+            evt.detail.serverResponse = html;
+        } catch(e) {
+            // Not JSON, let HTMX handle normally
+        }
+    }
+});
+</script>
+{% endblock %}

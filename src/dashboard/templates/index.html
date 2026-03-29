@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% set active_page = "timeline" %}
+
+{% block title %}Timeline - Desktop Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Activity Timeline</h2>
+    <p>{{ today }} &mdash; Your desktop activity feed</p>
+</div>
+
+<!-- Quick Stats -->
+<div class="grid-3" style="margin-bottom: 25px;">
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value" id="stat-screenshots">{{ screenshots|length }}</div>
+            <div class="stat-label">Screenshots Today</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value" id="stat-windows">{{ window_events|length }}</div>
+            <div class="stat-label">Window Switches</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value">{{ summaries|length }}</div>
+            <div class="stat-label">Hourly Summaries</div>
+        </div>
+    </div>
+</div>
+
+<!-- Generate Summary Button -->
+<div class="card">
+    <div class="card-header">
+        <h3>Activity Summary</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <button id="btn-load" class="btn btn-primary"
+                    hx-get="/api/summary?period=last_hour"
+                    hx-target="#summary-content"
+                    hx-indicator="#summary-loading"
+                    hx-disabled-elt="#btn-load,#btn-regen">
+                Load Summary
+            </button>
+            <button id="btn-regen" class="btn btn-secondary"
+                    hx-get="/api/summary?period=last_hour&refresh=true"
+                    hx-target="#summary-content"
+                    hx-indicator="#summary-loading"
+                    hx-disabled-elt="#btn-load,#btn-regen">
+                ↻ Regenerate
+            </button>
+            <span id="summary-loading" class="htmx-indicator">⏳ Generating summary... (~15s)</span>
+        </div>
+    </div>
+    <div id="summary-content">
+        {% if summaries %}
+            {% for s in summaries[:3] %}
+            <div class="summary-box">
+                <strong>
+                    {{ s.period_start[11:16] }} — {{ s.period_end[11:16] }},
+                    {{ s.period_start[8:10] }} {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][s.period_start[5:7]|int - 1] }}
+                </strong><br>
+                {{ s.summary_text }}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p style="color: var(--text-dim); font-size: 14px;">
+                Click "Load Summary" to see what you've been doing.
+            </p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.body.addEventListener('htmx:beforeSwap', function(evt) {
+    if (evt.detail.target.id === 'summary-content') {
+        try {
+            const data = JSON.parse(evt.detail.xhr.responseText);
+            if (data.summary) {
+                const now = new Date();
+                const label = `Last hour (until ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')})`;
+                evt.detail.serverResponse = '<div class="summary-box"><strong>' + label + '</strong><br>' + data.summary.replace(/\n/g, '<br>') + '</div>';
+            }
+        } catch(e) {}
+    }
+});
+</script>
+
+<!-- Recent Screenshots -->
+<div class="card">
+    <div class="card-header">
+        <h3>Recent Screenshots <span style="color:#4caf50;font-size:11px;font-weight:normal;">● live</span></h3>
+        <button class="btn btn-secondary" onclick="location.reload()">↻ Refresh</button>
+    </div>
+    {% if screenshots %}
+    <div class="screenshot-grid">
+        {% for s in screenshots[:12] %}
+        <div class="screenshot-thumb">
+            <img src="/api/screenshot/{{ s.id }}" alt="Screenshot" loading="lazy">
+            <div class="meta">{{ s.timestamp[11:19] }}
+                {% if s.app_context %} &mdash; {{ s.app_context[:80] }}{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p style="color: var(--text-dim); font-size: 14px;">No screenshots captured yet. The collector will start capturing soon.</p>
+    {% endif %}
+</div>
+
+<!-- Window Activity -->
+<div class="card">
+    <div class="card-header">
+        <h3>Window Activity <span style="color:#4caf50;font-size:11px;font-weight:normal;">● live</span></h3>
+    </div>
+    <div id="window-activity-list" style="max-height: 400px; overflow-y: auto;">
+        {% if window_events %}
+        {% for w in window_events[:30] %}
+        <div class="timeline-item">
+            <div class="timeline-time">{{ w.timestamp[11:19] }}</div>
+            <div class="timeline-content">
+                <div class="timeline-app">{{ w.process_name }}</div>
+                <div class="timeline-title">{{ w.window_title[:80] }}</div>
+                <div class="timeline-duration">{{ "%.0f"|format(w.duration_seconds) }}s</div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p style="color: var(--text-dim); font-size: 14px;">No window events recorded yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Auto-refresh stats and window activity every 60s
+setInterval(function() {
+    fetch('/api/timeline')
+        .then(r => r.json())
+        .then(data => {
+            // Update stats
+            const ss = document.getElementById('stat-screenshots');
+            const sw = document.getElementById('stat-windows');
+            if (ss) ss.textContent = data.screenshots ? data.screenshots.length : ss.textContent;
+            if (sw) sw.textContent = data.window_events ? data.window_events.length : sw.textContent;
+
+            // Update window activity list
+            const list = document.getElementById('window-activity-list');
+            if (list && data.window_events && data.window_events.length) {
+                list.innerHTML = data.window_events.slice(0, 30).map(w => `
+                    <div class="timeline-item">
+                        <div class="timeline-time">${w.timestamp.slice(11,19)}</div>
+                        <div class="timeline-content">
+                            <div class="timeline-app">${w.process_name || ''}</div>
+                            <div class="timeline-title">${(w.window_title || '').slice(0,80)}</div>
+                            <div class="timeline-duration">${Math.round(w.duration_seconds || 0)}s</div>
+                        </div>
+                    </div>`).join('');
+            }
+        })
+        .catch(() => {});
+}, 60000);
+</script>
+{% endblock %}

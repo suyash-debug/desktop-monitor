@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% set active_page = "history" %}
+
+{% block title %}History - Desktop Monitor{% endblock %}
+
+{% block content %}
+<style>
+    .date-nav {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 25px;
+        flex-wrap: wrap;
+    }
+    .date-nav select {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+        outline: none;
+    }
+    .date-nav select:focus { border-color: var(--accent); }
+    .session-bar {
+        position: relative;
+        height: 32px;
+        background: var(--surface2);
+        border-radius: 6px;
+        overflow: hidden;
+        margin-bottom: 12px;
+    }
+    .session-block {
+        position: absolute;
+        height: 100%;
+        background: var(--accent);
+        opacity: 0.75;
+        border-radius: 3px;
+        transition: opacity 0.15s;
+    }
+    .session-block:hover { opacity: 1; }
+    .idle-block {
+        position: absolute;
+        height: 100%;
+        background: var(--warning);
+        opacity: 0.35;
+        border-radius: 3px;
+    }
+    .bar-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        color: var(--text-dim);
+        margin-bottom: 20px;
+    }
+    .session-list-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+    }
+    .session-list-item:last-child { border-bottom: none; }
+    .session-dot {
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex-shrink: 0;
+    }
+    .idle-dot {
+        background: var(--warning);
+    }
+    .session-time { color: var(--text-dim); min-width: 110px; }
+    .session-dur { margin-left: auto; color: var(--accent-light); font-weight: 600; }
+    .summary-entry {
+        background: var(--surface2);
+        border-left: 3px solid var(--accent);
+        padding: 14px 16px;
+        border-radius: 0 8px 8px 0;
+        margin-bottom: 12px;
+        font-size: 14px;
+        line-height: 1.65;
+    }
+    .summary-entry .summary-time {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--accent-light);
+        margin-bottom: 6px;
+    }
+    .daily-summary-box {
+        background: var(--surface2);
+        border-left: 3px solid var(--success);
+        padding: 16px 18px;
+        border-radius: 0 8px 8px 0;
+        font-size: 14px;
+        line-height: 1.7;
+    }
+    .empty-state {
+        color: var(--text-dim);
+        font-size: 14px;
+        padding: 20px 0;
+    }
+    #session-loading { display: none; color: var(--accent-light); font-size: 13px; }
+</style>
+
+<div class="page-header">
+    <h2>Activity History</h2>
+    <p>Browse previous days — summaries, sessions, and idle periods</p>
+</div>
+
+<!-- Date selector -->
+<div class="date-nav">
+    <span style="font-size:14px;color:var(--text-dim);">Viewing:</span>
+    <select id="date-select" onchange="navigateDate(this.value)">
+        {% for d in available_dates %}
+        <option value="{{ d }}" {% if d == selected_date %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+    </select>
+    <button class="btn btn-secondary" onclick="shiftDate(-1)">&#8592; Prev</button>
+    <button class="btn btn-secondary" onclick="shiftDate(1)">Next &#8594;</button>
+</div>
+
+<!-- Stats bar -->
+<div class="grid-3" style="margin-bottom:25px;" id="stats-grid">
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value" id="stat-sessions">{{ hourly_summaries|length }}</div>
+            <div class="stat-label">Hourly Summaries</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value" id="stat-active">—</div>
+            <div class="stat-label">Active Time</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value" id="stat-idle">—</div>
+            <div class="stat-label">Away / Idle</div>
+        </div>
+    </div>
+</div>
+
+<!-- Session timeline -->
+<div class="card">
+    <div class="card-header">
+        <h3>Sessions Timeline</h3>
+        <span id="session-loading">Loading...</span>
+    </div>
+    <div id="timeline-bar" class="session-bar" title="Purple = active, yellow = idle/away"></div>
+    <div class="bar-labels"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:59</span></div>
+    <div id="session-list">
+        <p class="empty-state">Loading session data...</p>
+    </div>
+</div>
+
+<!-- Daily summary -->
+<div class="card">
+    <div class="card-header">
+        <h3>Daily Summary</h3>
+        <button class="btn btn-primary" id="btn-gen-daily"
+                onclick="generateDaily('{{ selected_date }}')">
+            {% if daily_summary %}↻ Regenerate{% else %}Generate Daily Summary{% endif %}
+        </button>
+    </div>
+    <div id="daily-summary-content">
+        {% if daily_summary %}
+        <div class="daily-summary-box">{{ daily_summary.summary_text }}</div>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:8px;">
+            Generated {{ daily_summary.generated_at[:16] }}
+        </p>
+        {% else %}
+        <p class="empty-state">No daily summary yet. Click "Generate Daily Summary" to create one using AI.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Hourly summaries -->
+<div class="card">
+    <div class="card-header">
+        <h3>Hourly Summaries</h3>
+        <span style="font-size:13px;color:var(--text-dim);">{{ hourly_summaries|length }} entries</span>
+    </div>
+    {% if hourly_summaries %}
+        {% for s in hourly_summaries %}
+        <div class="summary-entry">
+            <div class="summary-time">
+                {{ s.period_start[11:16] }} — {{ s.period_end[11:16] }}
+            </div>
+            {{ s.summary_text }}
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="empty-state">No hourly summaries for this day. Summaries are generated automatically every hour while the monitor is running.</p>
+    {% endif %}
+</div>
+
+<script>
+const selectedDate = "{{ selected_date }}";
+
+function navigateDate(d) {
+    window.location.href = '/history?date=' + d;
+}
+
+function shiftDate(delta) {
+    const sel = document.getElementById('date-select');
+    const opts = Array.from(sel.options);
+    const idx = opts.findIndex(o => o.value === sel.value);
+    const newIdx = idx - delta; // dates are newest-first
+    if (newIdx >= 0 && newIdx < opts.length) {
+        navigateDate(opts[newIdx].value);
+    }
+}
+
+function formatDuration(minutes) {
+    if (minutes < 60) return minutes + 'm';
+    const h = Math.floor(minutes / 60), m = minutes % 60;
+    return m ? h + 'h ' + m + 'm' : h + 'h';
+}
+
+function minutesFromTime(hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+}
+
+function renderTimeline(sessions, idlePeriods) {
+    const bar = document.getElementById('timeline-bar');
+    const total = 24 * 60;
+    bar.innerHTML = '';
+
+    // Render idle blocks first (behind)
+    idlePeriods.forEach(ip => {
+        if (ip.duration_min < 15) return; // only show significant idles
+        const startPct = minutesFromTime(ip.start) / total * 100;
+        const widthPct = ip.duration_min / total * 100;
+        const block = document.createElement('div');
+        block.className = 'idle-block';
+        block.style.left = startPct + '%';
+        block.style.width = Math.max(widthPct, 0.3) + '%';
+        block.title = `Idle/Away: ${ip.start}–${ip.end} (${ip.duration_min}m)`;
+        bar.appendChild(block);
+    });
+
+    // Render active session blocks
+    sessions.forEach(s => {
+        const startPct = minutesFromTime(s.start) / total * 100;
+        const widthPct = s.duration_min / total * 100;
+        const block = document.createElement('div');
+        block.className = 'session-block';
+        block.style.left = startPct + '%';
+        block.style.width = Math.max(widthPct, 0.5) + '%';
+        block.title = `Active: ${s.start}–${s.end} (${formatDuration(s.duration_min)})`;
+        bar.appendChild(block);
+    });
+}
+
+function renderSessionList(sessions, idlePeriods) {
+    const list = document.getElementById('session-list');
+
+    if (!sessions.length && !idlePeriods.length) {
+        list.innerHTML = '<p class="empty-state">No activity data found for this day.</p>';
+        return;
+    }
+
+    let html = '';
+
+    if (sessions.length) {
+        html += '<p style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600;">ACTIVE SESSIONS</p>';
+        sessions.forEach((s, i) => {
+            html += `<div class="session-list-item">
+                <div class="session-dot"></div>
+                <span class="session-time">${s.start} – ${s.end}</span>
+                <span>Session ${i+1}</span>
+                <span class="session-dur">${formatDuration(s.duration_min)}</span>
+            </div>`;
+        });
+    }
+
+    const bigIdles = idlePeriods.filter(ip => ip.duration_min >= 15);
+    if (bigIdles.length) {
+        html += '<p style="font-size:12px;color:var(--text-dim);margin-top:16px;margin-bottom:8px;font-weight:600;">AWAY / IDLE PERIODS</p>';
+        bigIdles.forEach(ip => {
+            html += `<div class="session-list-item">
+                <div class="session-dot idle-dot"></div>
+                <span class="session-time">${ip.start} – ${ip.end}</span>
+                <span style="color:var(--text-dim);">Away / idle</span>
+                <span class="session-dur" style="color:var(--warning);">${ip.duration_min}m</span>
+            </div>`;
+        });
+    }
+
+    list.innerHTML = html;
+}
+
+// Load session data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('session-loading').style.display = 'inline';
+    fetch('/api/history?date=' + selectedDate)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('session-loading').style.display = 'none';
+
+            // Update stats
+            const activeEl = document.getElementById('stat-active');
+            const idleEl = document.getElementById('stat-idle');
+            activeEl.textContent = formatDuration(data.total_active_min || 0);
+            idleEl.textContent = formatDuration(data.total_idle_min || 0);
+
+            renderTimeline(data.sessions || [], data.idle_periods || []);
+            renderSessionList(data.sessions || [], data.idle_periods || []);
+        })
+        .catch(() => {
+            document.getElementById('session-loading').style.display = 'none';
+            document.getElementById('session-list').innerHTML =
+                '<p class="empty-state">Could not load session data.</p>';
+        });
+});
+
+function generateDaily(date) {
+    const btn = document.getElementById('btn-gen-daily');
+    const content = document.getElementById('daily-summary-content');
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+    content.innerHTML = '<p style="color:var(--accent-light);font-size:14px;">Generating daily summary... this may take ~20 seconds.</p>';
+
+    fetch('/api/history/generate-daily?date=' + date)
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.textContent = '↻ Regenerate';
+            if (data.summary) {
+                content.innerHTML = '<div class="daily-summary-box">' +
+                    data.summary.replace(/\n/g, '<br>') +
+                    '</div><p style="font-size:11px;color:var(--text-dim);margin-top:8px;">Just generated</p>';
+            } else if (data.error) {
+                content.innerHTML = '<p style="color:var(--danger);">Error: ' + data.error + '</p>';
+            }
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.textContent = '↻ Regenerate';
+            content.innerHTML = '<p style="color:var(--danger);">Failed to generate summary.</p>';
+        });
+}
+</script>
+{% endblock %}

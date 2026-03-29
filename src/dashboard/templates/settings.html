@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% set active_page = "settings" %}
+
+{% block title %}Settings - Desktop Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Settings</h2>
+    <p>Configure monitoring, storage, and LLM settings</p>
+</div>
+
+<div class="grid-2">
+    <!-- Ollama Status -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Ollama LLM</h3>
+            {% if ollama_available %}
+            <span class="badge badge-success">Connected</span>
+            {% else %}
+            <span class="badge" style="background: rgba(255,118,117,0.15); color: var(--danger);">Offline</span>
+            {% endif %}
+        </div>
+        <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 10px;">
+            Endpoint: {{ config.llm.base_url }}
+        </p>
+        <p style="font-size: 13px; margin-bottom: 5px;">
+            <strong>Text Model:</strong> {{ config.llm.text_model }}
+        </p>
+        <p style="font-size: 13px; margin-bottom: 10px;">
+            <strong>Vision Model:</strong> {{ config.llm.vision_model }}
+        </p>
+        {% if models %}
+        <p style="font-size: 13px; margin-bottom: 5px;"><strong>Available Models:</strong></p>
+        <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+            {% for model in models %}
+            <span class="badge badge-accent">{{ model }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if not ollama_available %}
+        <p style="font-size: 13px; color: var(--warning); margin-top: 10px;">
+            Start Ollama with: <code style="background: var(--surface2); padding: 2px 6px; border-radius: 4px;">ollama serve</code>
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- Storage Stats -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Storage</h3>
+        </div>
+        <p style="font-size: 13px; margin-bottom: 5px;">
+            <strong>Data Directory:</strong> {{ storage_stats.data_dir }}
+        </p>
+        <p style="font-size: 13px; margin-bottom: 5px;">
+            <strong>Screenshots:</strong> {{ storage_stats.file_count }} files
+        </p>
+        <p style="font-size: 13px; margin-bottom: 5px;">
+            <strong>Disk Usage:</strong> {{ storage_stats.total_size_mb }} MB
+        </p>
+        <p style="font-size: 13px; margin-bottom: 5px;">
+            <strong>Retention:</strong> {{ config.storage.retention_days }} days
+        </p>
+    </div>
+</div>
+
+<!-- Collector Settings -->
+<div class="card">
+    <div class="card-header">
+        <h3>Collectors</h3>
+    </div>
+    <table style="width: 100%; font-size: 13px;">
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 10px 0;"><strong>Screenshot Capture</strong></td>
+            <td>Every {{ config.collectors.screenshot.interval_seconds }}s</td>
+            <td>OCR: {{ config.collectors.screenshot.ocr_engine }}</td>
+            <td>
+                {% if config.collectors.screenshot.enabled %}
+                <span class="badge badge-success">Enabled</span>
+                {% else %}
+                <span class="badge" style="background: rgba(255,118,117,0.15); color: var(--danger);">Disabled</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+            <td style="padding: 10px 0;"><strong>Window Tracker</strong></td>
+            <td>Every {{ config.collectors.window_tracker.interval_seconds }}s</td>
+            <td>Active window + process</td>
+            <td>
+                {% if config.collectors.window_tracker.enabled %}
+                <span class="badge badge-success">Enabled</span>
+                {% else %}
+                <span class="badge" style="background: rgba(255,118,117,0.15); color: var(--danger);">Disabled</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 10px 0;"><strong>Clipboard Monitor</strong></td>
+            <td>Every {{ config.collectors.clipboard.interval_seconds }}s</td>
+            <td>Text content</td>
+            <td>
+                {% if config.collectors.clipboard.enabled %}
+                <span class="badge badge-success">Enabled</span>
+                {% else %}
+                <span class="badge" style="background: rgba(255,118,117,0.15); color: var(--danger);">Disabled</span>
+                {% endif %}
+            </td>
+        </tr>
+    </table>
+</div>
+
+<!-- Privacy Settings -->
+<div class="card">
+    <div class="card-header">
+        <h3>Privacy</h3>
+    </div>
+    <p style="font-size: 13px; margin-bottom: 10px;">
+        <strong>Excluded Apps:</strong>
+        {% if config.privacy.excluded_apps %}
+            {% for app in config.privacy.excluded_apps %}
+            <span class="badge" style="background: var(--surface2); margin: 2px;">{{ app }}</span>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--text-dim);">None</span>
+        {% endif %}
+    </p>
+    <p style="font-size: 13px; margin-bottom: 10px;">
+        <strong>Excluded Window Titles:</strong>
+        {% if config.privacy.excluded_window_titles %}
+            {% for title in config.privacy.excluded_window_titles %}
+            <span class="badge" style="background: var(--surface2); margin: 2px;">{{ title }}</span>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--text-dim);">None</span>
+        {% endif %}
+    </p>
+    <p style="font-size: 13px;">
+        <strong>Blur Sensitive:</strong> {{ "Yes" if config.privacy.blur_sensitive else "No" }}
+    </p>
+    <p style="font-size: 12px; color: var(--text-dim); margin-top: 15px;">
+        Edit <code style="background: var(--surface2); padding: 2px 6px; border-radius: 4px;">config.yaml</code> to change settings, then restart the monitor.
+    </p>
+</div>
+{% endblock %}

@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% set active_page = "insights" %}
+
+{% block title %}Insights - Desktop Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Productivity Insights</h2>
+    <p>AI-powered analysis of your work patterns</p>
+</div>
+
+<!-- Quick Stats -->
+<div class="grid-3" style="margin-bottom: 25px;">
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value">{{ "%.0f"|format(metrics.total_active_minutes) }}</div>
+            <div class="stat-label">Active Minutes</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value">{{ metrics.total_context_switches }}</div>
+            <div class="stat-label">Context Switches</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value">{{ "%.1f"|format(metrics.avg_focus_duration_minutes) }}</div>
+            <div class="stat-label">Avg Focus (min)</div>
+        </div>
+    </div>
+</div>
+
+<!-- Time by Topic -->
+<div class="card">
+    <div class="card-header">
+        <h3>Time by Topic</h3>
+        <button class="btn btn-primary"
+                hx-get="/api/topics?range=today"
+                hx-target="#topics-content"
+                hx-indicator="#topics-loading">
+            Analyze Topics
+        </button>
+    </div>
+    <div id="topics-content">
+        <div class="grid-2">
+            <div>
+                <canvas id="topicChart" height="280"></canvas>
+            </div>
+            <div id="topic-list" style="padding-top: 10px;">
+                <p style="color: var(--text-dim); font-size: 14px;">
+                    Click "Analyze Topics" to have the AI categorize your activity by topic.
+                </p>
+            </div>
+        </div>
+    </div>
+    <span id="topics-loading" class="htmx-indicator">AI is classifying your activity into topics...</span>
+</div>
+
+<div class="grid-2">
+    <!-- Top Apps Chart -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Top Applications</h3>
+        </div>
+        <canvas id="appChart" height="250"></canvas>
+    </div>
+
+    <!-- Hourly Activity Chart -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Hourly Activity</h3>
+        </div>
+        <canvas id="hourlyChart" height="250"></canvas>
+    </div>
+</div>
+
+<!-- AI Insights -->
+<div class="card">
+    <div class="card-header">
+        <h3>AI Productivity Insights</h3>
+        <button class="btn btn-primary"
+                hx-get="/api/insights?range=today"
+                hx-target="#insights-content"
+                hx-indicator="#insights-loading">
+            Generate Insights
+        </button>
+    </div>
+    <div id="insights-content">
+        <p style="color: var(--text-dim); font-size: 14px;">
+            Click "Generate Insights" to get AI-powered analysis of your productivity patterns.
+        </p>
+    </div>
+    <span id="insights-loading" class="htmx-indicator">Analyzing with LLM...</span>
+</div>
+
+<!-- Focus Sessions -->
+<div class="card">
+    <div class="card-header">
+        <h3>Focus Sessions</h3>
+        <span class="badge badge-success">{{ metrics.focus_sessions|length }} sessions</span>
+    </div>
+    {% if metrics.focus_sessions %}
+    {% for s in metrics.focus_sessions[:10] %}
+    <div class="timeline-item">
+        <div class="timeline-time">{{ s.start[11:19] }}</div>
+        <div class="timeline-content">
+            <div class="timeline-app">{{ s.app }}</div>
+            <div class="timeline-title">{{ s.title }}</div>
+            <div class="timeline-duration">{{ s.duration_minutes }} minutes focused</div>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p style="color: var(--text-dim); font-size: 14px;">No focus sessions detected yet (10+ min on a single app).</p>
+    {% endif %}
+</div>
+
+<script>
+const CHART_COLORS = [
+    '#6c5ce7', '#00cec9', '#fdcb6e', '#ff7675', '#74b9ff',
+    '#a29bfe', '#81ecec', '#ffeaa7', '#fab1a0', '#0984e3'
+];
+
+// Handle JSON responses from HTMX
+document.body.addEventListener('htmx:beforeSwap', function(evt) {
+    if (evt.detail.target.id === 'insights-content') {
+        try {
+            const data = JSON.parse(evt.detail.xhr.responseText);
+            evt.detail.serverResponse = '<div class="summary-box">' + (data.narrative || 'No insights generated.').replace(/\n/g, '<br>') + '</div>';
+        } catch(e) {}
+    }
+
+    if (evt.detail.target.id === 'topics-content') {
+        try {
+            const data = JSON.parse(evt.detail.xhr.responseText);
+            const topics = data.topics || [];
+
+            if (topics.length === 0) {
+                evt.detail.serverResponse = '<p style="color: var(--text-dim); font-size: 14px;">No topics found. Browse some websites or apps first, then try again.</p>';
+                return;
+            }
+
+            // Build the topic list HTML
+            let listHtml = '';
+            topics.forEach((t, i) => {
+                const mins = (t.total_seconds / 60).toFixed(1);
+                const color = CHART_COLORS[i % CHART_COLORS.length];
+                listHtml += `
+                    <div style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                        <div style="width: 12px; height: 12px; border-radius: 3px; background: ${color}; flex-shrink: 0;"></div>
+                        <div style="flex: 1;">
+                            <div style="font-size: 14px; font-weight: 600;">${t.topic}</div>
+                            ${t.titles && t.titles.length ? '<div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">' + t.titles.slice(0, 2).join(', ').substring(0, 80) + '</div>' : ''}
+                        </div>
+                        <div style="font-size: 14px; font-weight: 700; color: ${color};">${mins}m</div>
+                    </div>`;
+            });
+
+            evt.detail.serverResponse = `
+                <div class="grid-2">
+                    <div><canvas id="topicChart" height="280"></canvas></div>
+                    <div style="padding-top: 10px; max-height: 320px; overflow-y: auto;">${listHtml}</div>
+                </div>`;
+
+            // Render chart after DOM update
+            setTimeout(() => {
+                const canvas = document.getElementById('topicChart');
+                if (canvas && topics.length > 0) {
+                    new Chart(canvas, {
+                        type: 'doughnut',
+                        data: {
+                            labels: topics.map(t => t.topic),
+                            datasets: [{
+                                data: topics.map(t => (t.total_seconds / 60).toFixed(1)),
+                                backgroundColor: CHART_COLORS.slice(0, topics.length),
+                                borderWidth: 0,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (ctx) => ctx.label + ': ' + ctx.parsed + ' min'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }, 100);
+        } catch(e) {
+            console.error('Topic parse error:', e);
+        }
+    }
+});
+
+// Top Apps Chart
+const appData = {{ metrics.top_apps | tojson }};
+if (appData.length > 0) {
+    new Chart(document.getElementById('appChart'), {
+        type: 'doughnut',
+        data: {
+            labels: appData.map(a => a.app || 'Unknown'),
+            datasets: [{
+                data: appData.map(a => a.minutes),
+                backgroundColor: CHART_COLORS,
+                borderWidth: 0,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#8b8fa3', font: { size: 11 } }
+                }
+            }
+        }
+    });
+}
+
+// Hourly Activity Chart
+const hourlyData = {{ metrics.hourly_breakdown | tojson }};
+const hours = Object.keys(hourlyData);
+const minutes = Object.values(hourlyData);
+
+if (hours.length > 0) {
+    new Chart(document.getElementById('hourlyChart'), {
+        type: 'bar',
+        data: {
+            labels: hours,
+            datasets: [{
+                label: 'Minutes Active',
+                data: minutes,
+                backgroundColor: '#6c5ce7',
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    ticks: { color: '#8b8fa3' },
+                    grid: { color: '#2e3344' }
+                },
+                y: {
+                    ticks: { color: '#8b8fa3' },
+                    grid: { color: '#2e3344' }
+                }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}
